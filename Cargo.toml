@@ -1,0 +1,11 @@
+[package]
+name = "chaosbot"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+image = "0.24.3"
+serenity = { default-features = false, features = ["client", "gateway", "model", "rustls_backend"], version = "0.11.5" }
+tokio = { version = "1.21.2", features = ["macros", "rt-multi-thread"] }
