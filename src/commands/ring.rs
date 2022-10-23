@@ -10,6 +10,8 @@ use serenity::builder::CreateApplicationCommand;
 use serenity::model::guild::Member;
 use serenity::model::prelude::{Attachment, AttachmentType, RoleId};
 use serenity::model::prelude::command::CommandOptionType;
+use crate::RingError::GenericError;
+use crate::RingError::UserRecoverableError;
 
 #[derive(Debug)]
 pub enum DaoRole {
@@ -24,6 +26,7 @@ pub enum RingError {
     UserRecoverableError(String),
 }
 
+
 pub fn register(command: &mut CreateApplicationCommand) -> &mut CreateApplicationCommand {
     command.name("ring").description("Overlay a ChaosDAO ring to an avatar").create_option(
         |option| {
@@ -37,31 +40,28 @@ pub fn register(command: &mut CreateApplicationCommand) -> &mut CreateApplicatio
 }
 
 pub async fn run<'a>(user: &'a Member, user_image: &'a Attachment) -> Result<AttachmentType<'a>, RingError> {
-    let user_role = find_dao_role(user)
-        .ok_or_else(|| RingError::UserRecoverableError(String::from("No proper role found for user")))?;
+    let ring_path = match find_dao_role(user)? {
+        DaoRole::Frens => { load_env_var("CHAOSRING_FRENS") }
+        DaoRole::Regulars => { load_env_var("CHAOSRING_REGULARS") }
+        DaoRole::DAOists => { load_env_var("CHAOSRING_DAOISTS") }
+    }?;
 
-    let ring_path = match user_role {
-        DaoRole::Frens => { env::var("CHAOSRING_FRENS") }
-        DaoRole::Regulars => { env::var("CHAOSRING_REGULARS") }
-        DaoRole::DAOists => { env::var("CHAOSRING_DAOISTS") }
-    }
-        .map_err(|err| RingError::GenericError(err.to_string()))?;
     let ring_reader = ImageReader::open(Path::new(&ring_path))
-        .map_err(|err| RingError::GenericError(err.to_string()))?;
+        .map_err(|err| GenericError(err.to_string()))?;
     let ring = ring_reader.decode()
-        .map_err(|err| RingError::GenericError(err.to_string()))?;
+        .map_err(|err| GenericError(err.to_string()))?;
 
     let avatar = user_image.download()
         .await
-        .map_err(|err| RingError::GenericError(err.to_string()))?;
+        .map_err(|err| GenericError(err.to_string()))?;
     let avatar = image::load_from_memory(&avatar)
         .and_then(|avatar| overlay_ring(&avatar.to_rgba8(), &ring.to_rgba8()))
-        .map_err(|err| RingError::GenericError(err.to_string()))?;
+        .map_err(|err| GenericError(err.to_string()))?;
 
     let buf: Vec<u8> = Vec::with_capacity(avatar.as_raw().len());
     let mut cursor: Cursor<Vec<u8>> = Cursor::new(buf);
     avatar.write_to(&mut cursor, ImageOutputFormat::Png)
-        .map_err(|err| RingError::GenericError(err.to_string()))?;
+        .map_err(|err| GenericError(err.to_string()))?;
     let attachment = AttachmentType::Bytes {
         // data: Cow::from(cursor.get_ref()),
         data: Cow::from(cursor.into_inner()),
@@ -71,22 +71,39 @@ pub async fn run<'a>(user: &'a Member, user_image: &'a Attachment) -> Result<Att
     Ok(attachment)
 }
 
-fn find_dao_role(member: &Member) -> Option<DaoRole> {
+fn load_env_var(variable: &str) -> Result<String, RingError> {
+    env::var(variable)
+        .map_err(|err| GenericError(err.to_string()))
+}
+
+fn parse_env_var(value: String) -> Result<u64, RingError> {
+    value.parse::<u64>()
+        .map_err(|err| GenericError(err.to_string()))
+}
+
+fn find_dao_role(member: &Member) -> Result<DaoRole, RingError> {
     let user_roles: &Vec<RoleId> = &member.roles;
 
-    let fren: RoleId = RoleId(1023569411178770434); // Greenring
-    let regular: RoleId = RoleId(1023569019422392401); // Redring
-    let daoist: RoleId = RoleId(1023569488278458418); // Bluering
+    let role_fren_id = load_env_var("DAO_ROLE_FREN")
+        .and_then(parse_env_var)?;
+    let role_regular_id = load_env_var("DAO_ROLE_REGULAR")
+        .and_then(parse_env_var)?;
+    let role_daoist_id = load_env_var("DAO_ROLE_DAOIST")
+        .and_then(parse_env_var)?;
+
+    let fren: RoleId = RoleId(role_fren_id); // Redring
+    let regular: RoleId = RoleId(role_regular_id); // Greenring
+    let daoist: RoleId = RoleId(role_daoist_id); // Bluering
 
     if user_roles.contains(&daoist) {
-        Some(DaoRole::DAOists)
+        Ok(DaoRole::DAOists)
     } else if user_roles.contains(&regular) {
-        Some(DaoRole::Regulars)
+        Ok(DaoRole::Regulars)
     } else if user_roles.contains(&fren) {
-        Some(DaoRole::Frens)
+        Ok(DaoRole::Frens)
     } else {
         println!("No proper role found");
-        None
+        Err(UserRecoverableError(String::from("No proper role found for user")))
     }
 }
 
@@ -127,8 +144,8 @@ fn get_ring_width(ring_img: &DynamicImage) -> u32 {
 impl fmt::Display for RingError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            RingError::GenericError(reason) => { write!(f, "Error while preparing an avatar: {}", reason) }
-            RingError::UserRecoverableError(reason) => { write!(f, "Error while preparing an avatar: {}", reason) }
+            GenericError(source) => { write!(f, "Error while preparing an avatar: {source}") }
+            UserRecoverableError(reason) => { write!(f, "Error while preparing an avatar: {reason}") }
         }
     }
 }
