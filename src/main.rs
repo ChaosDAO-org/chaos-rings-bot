@@ -4,8 +4,8 @@ use serenity::async_trait;
 use serenity::model::application::interaction::{Interaction, InteractionResponseType};
 use serenity::model::application::interaction::application_command::ApplicationCommandInteraction;
 use serenity::model::gateway::Ready;
-use serenity::model::id::GuildId;
 use serenity::model::prelude::AttachmentType;
+use serenity::model::prelude::command::Command;
 use serenity::model::prelude::interaction::application_command::CommandDataOptionValue;
 use serenity::prelude::*;
 
@@ -20,27 +20,16 @@ impl EventHandler for Handler {
     async fn ready(&self, ctx: Context, ready: Ready) {
         println!("{} is connected!", ready.user.name);
 
-        let guild_id = GuildId(
-            env::var("GUILD_ID")
-                .expect("Expected GUILD_ID in environment")
-                .parse()
-                .expect("GUILD_ID must be an integer"),
-        );
-
-        let commands = GuildId::set_application_commands(
-            &guild_id,
+        let command = Command::create_global_application_command(
             &ctx.http,
-            |commands| {
-                commands.create_application_command(commands::ring::register)
-            })
-            .await;
+            |command| { commands::ring::register(command) },
+        ).await;
 
-        println!("I now have the following guild slash commands: {:#?}", commands);
+        println!("Registered command: {:#?}", command);
     }
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
         if let Interaction::ApplicationCommand(command) = interaction {
-
             Self::respond_ack(&ctx, &command).await;
 
             let user_image = command.data.options.get(0)
@@ -65,9 +54,12 @@ impl EventHandler for Handler {
                         Self::respond_with_attachment(&ctx, &command, avatar).await;
                     }
                     Err(err) => {
+                        // TODO respond_with_error so the user knows something went wrong.
                         println!("Failed to create avatar: {}", err);
                         if let RingError::UserRecoverableError(_reason) = err {
                             // TODO respond with an error message indicating a problem, e.g. maybe the user has no proper role
+                        } else {
+                            // TODO respond with generic error message - the user can't do anything about it but they should know not to wait
                         }
                     }
                 }
