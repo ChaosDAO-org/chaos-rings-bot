@@ -2,7 +2,7 @@
 A simple Discord application (slash command) that overlays a ChaosDAO ring on top of user-provided image
 based on the user's role.
 
-# What?
+# How it works
 1. The user types `/ring` in a channel.
 2. A form with a field for attachment is displayed.
 3. The user adds a file and sends.
