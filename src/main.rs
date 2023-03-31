@@ -9,7 +9,7 @@ use serenity::model::prelude::command::Command;
 use serenity::model::prelude::interaction::application_command::CommandDataOptionValue;
 use serenity::prelude::*;
 
-use crate::commands::ring::RingError;
+use crate::commands::ring::UserRecoverableError;
 
 mod commands;
 
@@ -33,9 +33,9 @@ impl EventHandler for Handler {
             Self::respond_ack(&ctx, &command).await;
 
             let user_image = command.data.options.get(0)
-                .and_then(|attachment| attachment.resolved.as_ref())
-                .and_then(|attachment|
-                    if let CommandDataOptionValue::Attachment(avatar) = attachment {
+                .and_then(|data_option| data_option.resolved.as_ref())
+                .and_then(|option_value|
+                    if let CommandDataOptionValue::Attachment(avatar) = option_value {
                         Some(avatar)
                     } else {
                         None
@@ -44,22 +44,28 @@ impl EventHandler for Handler {
             let member = command.member.as_ref();
 
             if member.is_none() {
-                println!("No user info found.");
-            } else if user_image.is_none() {
-                println!("No user image (attachment) found.");
-            } else {
-                let response = commands::ring::run(member.unwrap(), &user_image.unwrap()).await;
-                match response {
-                    Ok(avatar) => {
-                        Self::respond_with_attachment(&ctx, &command, avatar).await;
-                    }
-                    Err(err) => {
-                        // TODO respond_with_error so the user knows something went wrong.
-                        println!("Failed to create avatar: {}", err);
-                        if let RingError::UserRecoverableError(_reason) = err {
-                            // TODO respond with an error message indicating a problem, e.g. maybe the user has no proper role
-                        } else {
-                            // TODO respond with generic error message - the user can't do anything about it but they should know not to wait
+                Self::respond_with_error(&ctx, &command, "No user info found.").await;
+                return;
+            }
+
+            if user_image.is_none() {
+                Self::respond_with_error(&ctx, &command, "No user image (attachment) found.").await;
+                return;
+            }
+
+            let response = commands::ring::run(member.unwrap(), user_image.unwrap()).await;
+            match response {
+                Ok(avatar) => {
+                    Self::respond_with_attachment(&ctx, &command, avatar).await;
+                }
+                Err(err) => {
+                    println!("Failed to create an avatar: {}", err);
+                    match err.downcast_ref::<UserRecoverableError>() {
+                        Some(user_recoverable_error) => {
+                            Self::respond_with_error(&ctx, &command, &format!("{}", &user_recoverable_error)).await;
+                        }
+                        None => {
+                            Self::respond_with_error(&ctx, &command, "Unexpected error").await;
                         }
                     }
                 }
@@ -99,6 +105,19 @@ impl Handler {
             .await
         {
             println!("Cannot send back an updated avatar: {}", why);
+        }
+    }
+
+    async fn respond_with_error(ctx: &Context, command: &ApplicationCommandInteraction, err_msg: &str) {
+        if let Err(why) = command.create_followup_message(
+            &ctx.http,
+            |response| {
+                response.ephemeral(true);
+                response.content(err_msg.to_string())
+            })
+            .await
+        {
+            println!("Cannot send back an error message: {}", why);
         }
     }
 }
