@@ -132,21 +132,22 @@ fn overlay_ring(avatar: &RgbaImage, ring: &RgbaImage) -> ImageResult<ImageBuffer
     let mut buffer = RgbaImage::new(ring_side, ring_side);
     buffer.copy_from(&scaled_avatar, circumference_width, circumference_width)?;
     overlay(&mut buffer, &ring, 0, 0);
+    let cx = (buffer.width() / 2) as f32;
+    let cy = (buffer.height() / 2) as f32;
+    apply_transparency(&mut buffer, ring_side / 2, cx, cy);
 
-    // add transparency outside the ring
-    let radius = ring_side / 2;
+    Ok(buffer)
+}
+
+/// Apply transparency to the image buffer pixels outside the ring
+fn apply_transparency(buffer: &mut ImageBuffer<Rgba<u8>, Vec<u8>>, radius: u32, cx: f32, cy: f32) {
     buffer.enumerate_pixels_mut()
         .for_each(|(x, y, px)| {
-            let cx = (ring_side / 2) as f32;
-            let cy = (ring_side / 2) as f32;
             let distance = (x as f32 - cx).hypot(y as f32 - cy);
             if distance > radius as f32 {
                 px[3] = 0;
             }
         });
-
-    // buffer.save("test.png").unwrap();
-    Ok(buffer)
 }
 
 fn get_ring_width(ring_img: &DynamicImage) -> u32 {
