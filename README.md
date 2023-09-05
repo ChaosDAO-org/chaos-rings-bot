@@ -30,6 +30,9 @@ DAO_ROLE_FREN=<role_id>
 DAO_ROLE_REGULAR=<role_id>
 DISCORD_TOKEN=<token>
 ```
+
+This bot also supports `.env` files using the same name of variables. A `.env.sample` file is provided. Rename it to .env once you have filled out the values.
+
 ## Docker image
 ```shell
 docker build --platform linux/x86_64 -t chaosbot .

@@ -124,6 +124,7 @@ impl Handler {
 
 #[tokio::main]
 async fn main() {
+    dotenv::dotenv().ok();
     let token = env::var("DISCORD_TOKEN").expect("Expected a discord token in the environment");
 
     let mut client = Client::builder(token, GatewayIntents::empty())
